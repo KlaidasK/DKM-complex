@@ -53,4 +53,5 @@ app.post('/log-weight', async (req, res) => {
     console.error('Error logging weight:', error);
     return res.status(500).json({ error: 'Server error while logging weight.' });
   }
+  // new  
 });
