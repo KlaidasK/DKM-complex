@@ -1,72 +1,56 @@
-const WorkoutStatus = require('./models/WorkoutStatus');
+app.post('/log-weight', async (req, res) => {
+  const { username, logDate, weight } = req.body;
 
-/**
- * Get workout completions for a user over a period
- * @param {String} username - User's username
- * @param {String} period - "weekly" or "monthly"
- * @returns {Object} - { success: Boolean, labels: [], data: [], total: Number, topWorkout: String } or error
- */
-async function getWorkoutCompletions(username, period) {
-  if (!username || !period) {
-    return { success: false, status: 400, error: 'Username and period are required' };
-  }
-
-  let dateRange;
-  const now = new Date();
-
-  switch (period.toLowerCase()) {
-    case 'weekly':
-      const oneWeekAgo = new Date(now);
-      oneWeekAgo.setDate(now.getDate() - 7);
-      dateRange = { $gte: oneWeekAgo };
-      break;
-    case 'monthly':
-      const oneMonthAgo = new Date(now);
-      oneMonthAgo.setMonth(now.getMonth() - 1);
-      dateRange = { $gte: oneMonthAgo };
-      break;
-    default:
-      return { success: false, status: 400, error: 'Invalid period. Use "weekly" or "monthly"' };
+  if (!username || !weight) {
+    return res.status(400).json({ error: 'Username and weight are required.' });
   }
 
   try {
-    const workoutStatuses = await WorkoutStatus.find({
+    // Normalize log date to UTC
+    const weightDate = logDate ? new Date(logDate) : new Date();
+    const normalizedDate = new Date(weightDate.setUTCHours(0, 0, 0, 0));
+
+    console.log('Normalized Date:', normalizedDate);
+
+    // Check if a log already exists for the same user and date
+    const existingLog = await weightLog.findOne({
       username,
-      date: dateRange,
-      status: 'Yes',
-    })
-      .populate('workoutId', 'name')
-      .exec();
+      date: normalizedDate,
+    });
 
-    if (!workoutStatuses || workoutStatuses.length === 0) {
-      return { success: false, status: 404, error: 'No workout data found for the specified period' };
+    if (existingLog) {
+      console.log('Existing Log:', existingLog);
+
+      // Use updateOne to update the log
+      const result = await weightLog.updateOne(
+        { username, date: normalizedDate },  // Find the existing log
+        { $set: { weight } }  // Update the weight field
+      );
+
+      if (result.nModified === 0) {
+        return res.status(400).json({ error: 'Weight value is the same as the existing one. No update needed.' });
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: 'Weight log updated successfully.',
+      });
+    } else {
+      // Create a new log
+      const newLog = new weightLog({
+        username,
+        date: normalizedDate,
+        weight,
+      });
+      const savedLog = await newLog.save();
+      return res.status(201).json({
+        success: true,
+        message: 'Weight log created successfully.',
+        savedLog,
+      });
     }
-
-    // Count completions
-    const workoutCounts = workoutStatuses.reduce((counts, ws) => {
-      const name = ws.workoutId.name;
-      counts[name] = (counts[name] || 0) + 1;
-      return counts;
-    }, {});
-
-    const labels = Object.keys(workoutCounts);
-    const data = Object.values(workoutCounts);
-    const total = data.reduce((sum, val) => sum + val, 0);
-
-    // Find most performed workout
-    const topWorkout = labels[data.indexOf(Math.max(...data))] || null;
-
-    return {
-      success: true,
-      labels,
-      data,
-      total,
-      topWorkout,
-    };
-  } catch (err) {
-    console.error(err);
-    return { success: false, status: 500, error: 'Server error while fetching workout data' };
+  } catch (error) {
+    console.error('Error logging weight:', error);
+    return res.status(500).json({ error: 'Server error while logging weight.' });
   }
-}
-
-module.exports = { getWorkoutCompletions };
+});
