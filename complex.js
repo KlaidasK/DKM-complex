@@ -1,83 +1,132 @@
-// Save workout status for a user
-app.post('/save-workout-status', async (req, res) => {
-  const { username, updatedWorkouts } = req.body;
+ async function displayProgress(goal) {
+            // Check if goal is weight-related
+            if (goal === "Lose weight" || goal === "Gain weight") {
+                const userData = await fetchUserData();
+                const latestWeightData = await fetchLatestWeight();
+        
+                if (userData && latestWeightData) {
+                    const initialWeight = userData.weight;
+                    const latestWeight = latestWeightData.weight;
+                    let progressMessage = "";
+        
+                    if (goal === "Lose weight") {
+                        const progress = initialWeight - latestWeight;
+                        progressMessage = `Initial Weight: ${initialWeight}kg, Latest Weight: ${latestWeight}kg, Progress: ${
+                            progress > 0 ? `${progress}kg lost` : "No progress yet"
+                        }.`;
+                    } else if (goal === "Gain weight") {
+                        const progress = latestWeight - initialWeight;
+                        progressMessage = `Initial Weight: ${initialWeight}kg, Latest Weight: ${latestWeight}kg, Progress: ${
+                            progress > 0 ? `${progress}kg gained` : "No progress yet"
+                        }.`;
+                    }
+        
+                    if (progressMessage) {
+                        progressSection.style.display = "block";
+                        progressText.textContent = progressMessage;
+                    } else {
+                        progressSection.style.display = "none";
+                    }
+                } else {
+                    progressSection.style.display = "none";
+                }
+            }
+            
+            // Check if goal is to increase step count
+            else if (goal === "Increase step count") {
+                try {
+                    const response = await fetch(`/get-step-progress?username=${username}`);
+        
+                    if (!response.ok) {
+                        throw new Error('Failed to fetch step progress');
+                    }
+        
+                    const data = await response.json();
+        
+                    if (data.success) {
+                        const { initialSteps, latestSteps, progress } = data;
+        
+                        // Show the step progress message
+                        progressSection.style.display = "block";
+                        progressText.textContent = `Initial Steps: ${initialSteps}, Latest Steps: ${latestSteps}, Progress: ${
+                            progress > 0 ? `${progress} steps increased` : `${Math.abs(progress)} steps decreased`
+                        }.`;
+                    } else {
+                        progressSection.style.display = "none";
+                        console.error("No step data found:", data.error || data.message);
+                    }
+                } catch (error) {
+                    console.error("Error displaying step progress:", error);
+                    progressSection.style.display = "none";
+                }
+            }
+        
+                    // Check if goal is related to calorie intake
+            else if (goal === "Track daily calories") {
+                try {
+                    const response = await fetch(`/get-calories-intake?username=${username}`);
 
-  try {
-    // Create a new workout status entry
-    const newStatus = new WorkoutStatus({
-      username,
-      workoutId,
-      status,
-      date: new Date() // Default to the current date
-    });
+                    if (!response.ok) {
+                        throw new Error('Failed to fetch calorie intake data');
+                    }
 
-    // Save the new status
-    await newStatus.save();
+                    const data = await response.json();
 
-    res.status(200).json({ success: true, message: 'Workout status saved successfully.' });
-  } catch (error) {
-    console.error('Error saving workout status:', error);
-    res.status(500).json({ error: 'Error saving workout status', details: error.message });
-  }
-});
+                    if (data.success) {
+                        const { calorieGoal, initialCalories, latestCalories, progress } = data;
 
-app.get('/get-workout-completions', async (req, res) => {
-  const { username, period } = req.query;
+                        // Prepare the progress message
+                        let progressMessage = `Initial Calories: ${initialCalories} kcal, Latest Calories: ${latestCalories} kcal, Progress: ${
+                            progress > 0 ? `${progress} kcal` : `${Math.abs(progress)} calorie progress`
+                        }.`;
 
-  if (!username || !period) {
-    return res.status(400).json({ success: false, error: 'Username and period are required' });
-  }
+                        // Display the progress message
+                        progressSection.style.display = "block";
+                        progressText.textContent = progressMessage;
+                    } else {
+                        progressSection.style.display = "none";
+                        console.error("No calorie data found:", data.error || data.message);
+                    }
+                } catch (error) {
+                    console.error("Error displaying calorie progress:", error);
+                    progressSection.style.display = "none";
+                }
+            }
 
-  try {
-    let dateRange;
+            else if (goal === "Increase fitness (workout repetition)") {
+                try {
+                    const response = await fetch(`/get-workout-progress?username=${username}`);
+            
+                    if (!response.ok) {
+                        throw new Error('Failed to fetch workout progress data');
+                    }
+            
+                    const data = await response.json();
+            
+                    if (data.success) {
+                        const { averageWorkoutsPerWeek, totalCompletedWorkouts, startDate, endDate } = data;
+            
+                        // Prepare the progress message
+                        let progressMessage = `Total completed Workouts: ${totalCompletedWorkouts}, Completed workouts per Week: ${averageWorkoutsPerWeek}, `;
+            
+                        // Display the progress message
+                        progressSection.style.display = "block";
+                        progressText.textContent = progressMessage;
+                    } else {
+                        progressSection.style.display = "none";
+                        console.error("No workout data found:", data.error || data.message);
+                    }
+                } catch (error) {
+                    console.error("Error displaying workout progress:", error);
+                    progressSection.style.display = "none";
+                }
+            }
+            
 
-    // Determine the date range based on the period (weekly or monthly)
-    if (period === 'weekly') {
-      const oneWeekAgo = new Date();
-      oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-      dateRange = { $gte: oneWeekAgo };
-    } else if (period === 'monthly') {
-      const oneMonthAgo = new Date();
-      oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
-      dateRange = { $gte: oneMonthAgo };
-    } else {
-      return res.status(400).json({ success: false, error: 'Invalid period' });
-    }
-
-    // Fetch the workout status data with `status: 'Yes'` and populate the workout details
-    const workoutStatuses = await WorkoutStatus.find({
-      username: username,
-      date: dateRange,
-      status: 'Yes', // Include only workouts marked as completed (status = "Yes")
-    })
-      .populate('workoutId', 'name') // Populate workout name
-      .exec();
-
-    if (!workoutStatuses || workoutStatuses.length === 0) {
-      return res.status(404).json({ success: false, error: 'No workout data found for the specified period' });
-    }
-
-    // Count the completions of each workout
-    const workoutCounts = workoutStatuses.reduce((counts, workoutStatus) => {
-      const workoutName = workoutStatus.workoutId.name; // Access the populated workout name
-      if (!counts[workoutName]) {
-        counts[workoutName] = 0;
-      }
-      counts[workoutName]++;
-      return counts;
-    }, {});
-
-    // Prepare the data for the chart
-    const labels = Object.keys(workoutCounts);
-    const data = Object.values(workoutCounts);
-
-    return res.json({
-      success: true,
-      labels: labels,
-      data: data,
-    });
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({ success: false, error: 'Error fetching workout completion data' });
-  }
-});
+        
+            // Hide the progress section if no valid goal
+            else {
+                progressSection.style.display = "none";
+            }
+        }
+        
